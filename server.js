@@ -4,6 +4,7 @@ import fetch from 'node-fetch';
 import admin from 'firebase-admin';
 import fs from 'fs';
 import path from 'path';
+import cors from 'cors';
 
 // Load environment variables
 dotenv.config();
@@ -69,6 +70,13 @@ const WEBSITE_URL = process.env.WEBSITE_URL || 'http://localhost:3000';
 // Initialize Express
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Enable CORS for all routes
+app.use(cors({
+  origin: ['http://localhost:3000', 'https://zenith-devs.web.app', 'https://zenith-devs.firebaseapp.com'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-api-secret']
+}));
 
 app.use(express.json());
 
