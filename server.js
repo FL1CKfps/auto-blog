@@ -1,34 +1,58 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import fetch from 'node-fetch';
-import { initializeApp } from 'firebase/app';
-import { 
-  getFirestore, 
-  doc, 
-  getDoc, 
-  updateDoc, 
-  setDoc, 
-  collection,
-  addDoc,
-  Timestamp
-} from 'firebase/firestore';
+import admin from 'firebase-admin';
+import fs from 'fs';
+import path from 'path';
 
 // Load environment variables
 dotenv.config();
 
-// Configure Firebase
-const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY,
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.FIREBASE_APP_ID
-};
+// Path to service account key file - ensure this file exists
+const serviceAccountPath = path.resolve('./serviceAccountKey.json');
 
-// Initialize Firebase
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp);
+try {
+  // Initialize Firebase Admin with service account
+  if (fs.existsSync(serviceAccountPath)) {
+    // Use service account file
+    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+    
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    
+    console.log('Firebase initialized with service account file');
+  } else {
+    // Fallback to environment variables
+    console.log('Service account file not found, using environment variables');
+    
+    // Create a service account from environment variables
+    const serviceAccount = {
+      type: "service_account",
+      project_id: process.env.FIREBASE_PROJECT_ID,
+      private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
+      private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      client_email: process.env.FIREBASE_CLIENT_EMAIL,
+      client_id: process.env.FIREBASE_CLIENT_ID,
+      auth_uri: "https://accounts.google.com/o/oauth2/auth",
+      token_uri: "https://oauth2.googleapis.com/token",
+      auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
+      client_x509_cert_url: process.env.FIREBASE_CLIENT_X509_CERT_URL,
+      universe_domain: "googleapis.com"
+    };
+
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    
+    console.log('Firebase initialized with service account from environment variables');
+  }
+} catch (error) {
+  console.error('Error initializing Firebase:', error);
+  process.exit(1);
+}
+
+const db = admin.firestore();
 
 // Config document in Firestore
 const CONFIG_DOC_ID = 'autoBlogConfig';
@@ -327,14 +351,14 @@ async function createAutoBlogPost() {
       slug: title.toLowerCase()
         .replace(/[^\w\s-]/g, '')
         .replace(/\s+/g, '-'),
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-      publishedAt: Timestamp.now(),
+      createdAt: admin.firestore.Timestamp.now(),
+      updatedAt: admin.firestore.Timestamp.now(),
+      publishedAt: admin.firestore.Timestamp.now(),
     };
 
     // 6. Save to Firestore
-    const blogsRef = collection(db, "blogs");
-    const docRef = await addDoc(blogsRef, blogData);
+    const blogsRef = db.collection("blogs");
+    const docRef = await blogsRef.add(blogData);
     console.log(`New blog post created with ID: ${docRef.id}`);
     return docRef.id;
   } catch (error) {
@@ -348,10 +372,10 @@ async function createAutoBlogPost() {
  */
 async function getAutoBlogConfig() {
   try {
-    const configRef = doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID);
-    const configSnap = await getDoc(configRef);
+    const configRef = db.collection(CONFIG_COLLECTION).doc(CONFIG_DOC_ID);
+    const configSnap = await configRef.get();
     
-    if (configSnap.exists()) {
+    if (configSnap.exists) {
       return configSnap.data();
     } else {
       // Default config if it doesn't exist
@@ -361,11 +385,11 @@ async function getAutoBlogConfig() {
         scheduleIntervalHours: 24,
         lastNewsPost: null,
         lastRegularPost: null,
-        updatedAt: Timestamp.now()
+        updatedAt: admin.firestore.Timestamp.now()
       };
       
       // Create the default config
-      await setDoc(configRef, defaultConfig);
+      await configRef.set(defaultConfig);
       return defaultConfig;
     }
   } catch (error) {
@@ -379,16 +403,16 @@ async function getAutoBlogConfig() {
  */
 async function updateAutoBlogConfig(updates) {
   try {
-    const configRef = doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID);
+    const configRef = db.collection(CONFIG_COLLECTION).doc(CONFIG_DOC_ID);
     
     // Add timestamp to updates
-    updates.updatedAt = Timestamp.now();
+    updates.updatedAt = admin.firestore.Timestamp.now();
     
     // Update the config
-    await updateDoc(configRef, updates);
+    await configRef.update(updates);
     
     // Return the updated config
-    const updatedConfig = await getDoc(configRef);
+    const updatedConfig = await configRef.get();
     return updatedConfig.data();
   } catch (error) {
     console.error('Error updating auto blog config:', error);
@@ -410,7 +434,7 @@ async function startNewsSchedule() {
     await createAutoBlogPost();
     
     await updateAutoBlogConfig({ 
-      lastNewsPost: Timestamp.now() 
+      lastNewsPost: admin.firestore.Timestamp.now() 
     });
     
     // Schedule news posts every minute
@@ -427,7 +451,7 @@ async function startNewsSchedule() {
         
         const blogId = await createAutoBlogPost();
         console.log(`Created news post with ID: ${blogId}`);
-        await updateAutoBlogConfig({ lastNewsPost: Timestamp.now() });
+        await updateAutoBlogConfig({ lastNewsPost: admin.firestore.Timestamp.now() });
       } catch (error) {
         console.error("Error in news post interval:", error);
       }
@@ -448,7 +472,7 @@ async function startRegularSchedule(intervalHours) {
     await createAutoBlogPost();
     
     await updateAutoBlogConfig({ 
-      lastRegularPost: Timestamp.now() 
+      lastRegularPost: admin.firestore.Timestamp.now() 
     });
     
     // Schedule regular posts at specified interval
@@ -465,7 +489,7 @@ async function startRegularSchedule(intervalHours) {
         
         const blogId = await createAutoBlogPost();
         console.log(`Created regular post with ID: ${blogId}`);
-        await updateAutoBlogConfig({ lastRegularPost: Timestamp.now() });
+        await updateAutoBlogConfig({ lastRegularPost: admin.firestore.Timestamp.now() });
       } catch (error) {
         console.error("Error in regular post interval:", error);
       }
@@ -517,7 +541,7 @@ app.post('/api/create-post', async (req, res) => {
       const newsConfig = await getAutoBlogConfig();
       if (newsConfig.newsUpdatesEnabled) {
         const newsBlogId = await createAutoBlogPost();
-        await updateAutoBlogConfig({ lastNewsPost: Timestamp.now() });
+        await updateAutoBlogConfig({ lastNewsPost: admin.firestore.Timestamp.now() });
         return res.json({ success: true, blogId: newsBlogId });
       } else {
         return res.status(400).json({ error: 'News updates are disabled' });
@@ -527,7 +551,7 @@ app.post('/api/create-post', async (req, res) => {
       const regularConfig = await getAutoBlogConfig();
       if (regularConfig.autoScheduleEnabled) {
         const regularBlogId = await createAutoBlogPost();
-        await updateAutoBlogConfig({ lastRegularPost: Timestamp.now() });
+        await updateAutoBlogConfig({ lastRegularPost: admin.firestore.Timestamp.now() });
         return res.json({ success: true, blogId: regularBlogId });
       } else {
         return res.status(400).json({ error: 'Auto schedule is disabled' });
@@ -645,7 +669,7 @@ app.post('/api/webhook', async (req, res) => {
         const newsConfig = await getAutoBlogConfig();
         if (newsConfig.newsUpdatesEnabled) {
           const newsBlogId = await createAutoBlogPost();
-          await updateAutoBlogConfig({ lastNewsPost: Timestamp.now() });
+          await updateAutoBlogConfig({ lastNewsPost: admin.firestore.Timestamp.now() });
           return res.json({ success: true, blogId: newsBlogId });
         } else {
           return res.json({ success: false, error: 'News updates not enabled' });
@@ -656,7 +680,7 @@ app.post('/api/webhook', async (req, res) => {
         const regularConfig = await getAutoBlogConfig();
         if (regularConfig.autoScheduleEnabled) {
           const regularBlogId = await createAutoBlogPost();
-          await updateAutoBlogConfig({ lastRegularPost: Timestamp.now() });
+          await updateAutoBlogConfig({ lastRegularPost: admin.firestore.Timestamp.now() });
           return res.json({ success: true, blogId: regularBlogId });
         } else {
           return res.json({ success: false, error: 'Regular schedule not enabled' });
