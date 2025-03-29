@@ -80,52 +80,11 @@ app.use(cors({
 
 app.use(express.json());
 
-// Trending topics for blogs
-const TRENDING_TOPICS = [
-  'web development',
-  'artificial intelligence',
-  'machine learning',
-  'blockchain',
-  'cryptocurrency',
-  'cybersecurity',
-  'cloud computing',
-  'data science',
-  'responsive design',
-  'UX/UI design',
-  'mobile development',
-  'DevOps',
-  'serverless architecture',
-];
-
-// Popular tags to use
-const POPULAR_TAGS = [
-  'technology',
-  'programming',
-  'webdev',
-  'coding',
-  'developer',
-  'software',
-  'tech',
-  'frontend',
-  'backend',
-  'fullstack',
-  'javascript',
-  'python',
-  'react',
-  'node',
-  'design',
-];
-
-/**
- * Get a random item from an array
- */
+// Helper functions
 function getRandomItem(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-/**
- * Get multiple random items from an array
- */
 function getRandomItems(arr, count) {
   const shuffled = [...arr].sort(() => 0.5 - Math.random());
   return shuffled.slice(0, count);
@@ -227,6 +186,149 @@ function extractBlogDataManually(text, topic) {
   }
   
   return { title, content, excerpt };
+}
+
+/**
+ * Get trending topics via Gemini
+ */
+async function getTrendingTopics() {
+  try {
+    const prompt = `
+      Search the web for the most current popular and trending tech topics today.
+      Return exactly 5 trending tech topics that would make interesting blog posts.
+      The topics should be specific enough to generate a good blog post about.
+      Format your response as a JSON array of strings only, with no explanations.
+      Example: ["web3 developments", "AI chatbot innovations", "cybersecurity trends", "cloud computing advances", "mobile development frameworks"]
+    `;
+
+    const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: prompt,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const data = await response.json();
+    
+    if (data.error) {
+      console.error("Gemini API error when getting trending topics:", data.error);
+      return ['web development', 'artificial intelligence', 'machine learning', 'cloud computing', 'cybersecurity'];
+    }
+    
+    // Extract text from the response
+    const content = data.candidates[0].content;
+    const parts = content.parts;
+    
+    if (!parts || !parts.length || !parts[0].text) {
+      console.error("No text content in Gemini trending topics response");
+      return ['web development', 'artificial intelligence', 'machine learning', 'cloud computing', 'cybersecurity'];
+    }
+    
+    const text = parts[0].text;
+    
+    try {
+      // Try to parse JSON array from response
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const topics = JSON.parse(jsonMatch[0]);
+        console.log("Found trending topics:", topics);
+        return topics;
+      } else {
+        console.log("Could not extract JSON array from Gemini response, using text as-is");
+        // Split the text by commas or newlines if not valid JSON
+        const topics = text.split(/,|\n/).map(t => t.trim()).filter(t => t.length > 0);
+        return topics.slice(0, 5); // Return up to 5 topics
+      }
+    } catch (error) {
+      console.error("Error parsing trending topics:", error);
+      return ['web development', 'artificial intelligence', 'machine learning', 'cloud computing', 'cybersecurity'];
+    }
+  } catch (error) {
+    console.error("Error getting trending topics:", error);
+    return ['web development', 'artificial intelligence', 'machine learning', 'cloud computing', 'cybersecurity'];
+  }
+}
+
+/**
+ * Get relevant tags for a topic via Gemini
+ */
+async function getRelevantTags(topic) {
+  try {
+    const prompt = `
+      Generate 5 relevant and popular tags/hashtags for a tech blog post about "${topic}".
+      Return them as a JSON array of strings only, with no explanations.
+      Tags should be short (1-2 words) and popular for tech content.
+      Example: ["javascript", "webdev", "programming", "technology", "coding"]
+    `;
+
+    const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: prompt,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const data = await response.json();
+    
+    if (data.error) {
+      console.error("Gemini API error when getting tags:", data.error);
+      return ['technology', 'coding', 'programming', 'webdev', 'tech'];
+    }
+    
+    // Extract text from the response
+    const content = data.candidates[0].content;
+    const parts = content.parts;
+    
+    if (!parts || !parts.length || !parts[0].text) {
+      console.error("No text content in Gemini tags response");
+      return ['technology', 'coding', 'programming', 'webdev', 'tech'];
+    }
+    
+    const text = parts[0].text;
+    
+    try {
+      // Try to parse JSON array from response
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const tags = JSON.parse(jsonMatch[0]);
+        console.log(`Found tags for ${topic}:`, tags);
+        return tags;
+      } else {
+        console.log("Could not extract JSON array from Gemini response, using text as-is");
+        // Split the text by commas or newlines if not valid JSON
+        const tags = text.split(/,|\n/).map(t => t.trim()).filter(t => t.length > 0);
+        return tags.slice(0, 5); // Return up to 5 tags
+      }
+    } catch (error) {
+      console.error("Error parsing tags:", error);
+      return ['technology', 'coding', 'programming', 'webdev', 'tech'];
+    }
+  } catch (error) {
+    console.error("Error getting tags:", error);
+    return ['technology', 'coding', 'programming', 'webdev', 'tech'];
+  }
 }
 
 /**
@@ -335,19 +437,22 @@ async function getUnsplashImage(topic) {
  */
 async function createAutoBlogPost() {
   try {
-    // 1. Pick a random trending topic
-    const topic = getRandomItem(TRENDING_TOPICS);
+    // 1. Get trending topics
+    const trendingTopics = await getTrendingTopics();
     
-    // 2. Generate blog content using Gemini
+    // 2. Pick a random trending topic
+    const topic = getRandomItem(trendingTopics);
+    
+    // 3. Generate blog content using Gemini
     const { title, content, excerpt } = await generateBlogContent(topic);
     
-    // 3. Get related image from Unsplash
+    // 4. Get related image from Unsplash
     const coverImage = await getUnsplashImage(topic);
     
-    // 4. Pick random tags (3-5)
-    const tags = getRandomItems(POPULAR_TAGS, Math.floor(Math.random() * 3) + 3);
+    // 5. Get relevant tags for the topic
+    const tags = await getRelevantTags(topic);
     
-    // 5. Create the blog post data
+    // 6. Create the blog post data
     const blogData = {
       title,
       content,
@@ -364,7 +469,7 @@ async function createAutoBlogPost() {
       publishedAt: admin.firestore.Timestamp.now(),
     };
 
-    // 6. Save to Firestore
+    // 7. Save to Firestore
     const blogsRef = db.collection("blogs");
     const docRef = await blogsRef.add(blogData);
     console.log(`New blog post created with ID: ${docRef.id}`);
