@@ -375,21 +375,21 @@ async function getAutoBlogConfig() {
 }
 
 /**
- * Helper function to update config
+ * Update auto blog config with provided updates
  */
 async function updateAutoBlogConfig(updates) {
   try {
     const configRef = doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID);
-    const currentConfig = await getAutoBlogConfig();
     
-    const newConfig = {
-      ...currentConfig,
-      ...updates,
-      updatedAt: Timestamp.now()
-    };
+    // Add timestamp to updates
+    updates.updatedAt = Timestamp.now();
     
-    await setDoc(configRef, newConfig);
-    return newConfig;
+    // Update the config
+    await updateDoc(configRef, updates);
+    
+    // Return the updated config
+    const updatedConfig = await getDoc(configRef);
+    return updatedConfig.data();
   } catch (error) {
     console.error('Error updating auto blog config:', error);
     throw error;
@@ -404,34 +404,27 @@ let regularInterval = null;
  * Start the news post schedule
  */
 async function startNewsSchedule() {
-  // Clear existing interval if it exists
-  if (newsInterval) {
-    clearInterval(newsInterval);
-    newsInterval = null;
-  }
-  
-  // Create a post immediately and update timestamp
   try {
-    const blogId = await createAutoBlogPost();
-    console.log(`Created initial news post with ID: ${blogId}`);
+    console.log('Starting news schedule...');
+    // Create a post right away
+    await createAutoBlogPost();
     
     await updateAutoBlogConfig({ 
       lastNewsPost: Timestamp.now() 
     });
     
-    // Set up interval - every minute (60,000 ms)
+    // Schedule news posts every minute
     newsInterval = setInterval(async () => {
       try {
-        // Get latest config first to ensure it's still enabled
+        // Only create post if it's still enabled
         const config = await getAutoBlogConfig();
         if (!config.newsUpdatesEnabled) {
-          console.log("News updates disabled in config, stopping interval");
+          console.log('News updates disabled, stopping schedule');
           clearInterval(newsInterval);
           newsInterval = null;
           return;
         }
         
-        // Create post and update timestamp
         const blogId = await createAutoBlogPost();
         console.log(`Created news post with ID: ${blogId}`);
         await updateAutoBlogConfig({ lastNewsPost: Timestamp.now() });
@@ -439,11 +432,9 @@ async function startNewsSchedule() {
         console.error("Error in news post interval:", error);
       }
     }, 60 * 1000); // Every minute
-    
-    return true;
   } catch (error) {
-    console.error("Error starting news schedule:", error);
-    return false;
+    console.error('Error starting news schedule:', error);
+    throw error;
   }
 }
 
@@ -451,47 +442,37 @@ async function startNewsSchedule() {
  * Start the regular post schedule
  */
 async function startRegularSchedule(intervalHours) {
-  // Clear existing interval if it exists
-  if (regularInterval) {
-    clearInterval(regularInterval);
-    regularInterval = null;
-  }
-  
-  // Create a post immediately and update timestamp
   try {
-    const blogId = await createAutoBlogPost();
-    console.log(`Created initial regular post with ID: ${blogId}`);
+    console.log(`Starting regular schedule every ${intervalHours} hours...`);
+    // Create a post right away
+    await createAutoBlogPost();
     
     await updateAutoBlogConfig({ 
       lastRegularPost: Timestamp.now() 
     });
     
-    // Set up interval - specified hours in milliseconds
-    const ms = intervalHours * 60 * 60 * 1000;
+    // Schedule regular posts at specified interval
     regularInterval = setInterval(async () => {
       try {
-        // Get latest config first to ensure it's still enabled
+        // Only create post if it's still enabled
         const config = await getAutoBlogConfig();
         if (!config.autoScheduleEnabled) {
-          console.log("Regular schedule disabled in config, stopping interval");
+          console.log('Regular schedule disabled, stopping');
           clearInterval(regularInterval);
           regularInterval = null;
           return;
         }
         
-        // Create post and update timestamp
         const blogId = await createAutoBlogPost();
         console.log(`Created regular post with ID: ${blogId}`);
         await updateAutoBlogConfig({ lastRegularPost: Timestamp.now() });
       } catch (error) {
         console.error("Error in regular post interval:", error);
       }
-    }, ms);
-    
-    return true;
+    }, intervalHours * 60 * 60 * 1000); // Convert hours to ms
   } catch (error) {
-    console.error("Error starting regular schedule:", error);
-    return false;
+    console.error('Error starting regular schedule:', error);
+    throw error;
   }
 }
 
@@ -522,12 +503,41 @@ async function initializeSchedules() {
 
 // Route to manually create a blog post
 app.post('/api/create-post', async (req, res) => {
+  // Verify API secret
+  const secret = req.headers['x-api-secret'];
+  if (secret !== API_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized. Invalid API secret.' });
+  }
+  
   try {
-    const blogId = await createAutoBlogPost();
-    res.json({ success: true, message: 'Blog post created successfully', blogId });
+    const postType = req.body.postType || 'regular';
+    
+    if (postType === 'news') {
+      // Check if news updates are enabled
+      const newsConfig = await getAutoBlogConfig();
+      if (newsConfig.newsUpdatesEnabled) {
+        const newsBlogId = await createAutoBlogPost();
+        await updateAutoBlogConfig({ lastNewsPost: Timestamp.now() });
+        return res.json({ success: true, blogId: newsBlogId });
+      } else {
+        return res.status(400).json({ error: 'News updates are disabled' });
+      }
+    } else if (postType === 'regular') {
+      // Check if auto schedule is enabled
+      const regularConfig = await getAutoBlogConfig();
+      if (regularConfig.autoScheduleEnabled) {
+        const regularBlogId = await createAutoBlogPost();
+        await updateAutoBlogConfig({ lastRegularPost: Timestamp.now() });
+        return res.json({ success: true, blogId: regularBlogId });
+      } else {
+        return res.status(400).json({ error: 'Auto schedule is disabled' });
+      }
+    } else {
+      return res.status(400).json({ error: 'Invalid post type' });
+    }
   } catch (error) {
-    console.error('Error creating blog post:', error);
-    res.status(500).json({ success: false, error: error.message });
+    console.error('Error creating post:', error);
+    return res.status(500).json({ error: 'Server error creating post' });
   }
 });
 
