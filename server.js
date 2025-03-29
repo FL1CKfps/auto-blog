@@ -99,6 +99,10 @@ function createFallbackContent(topic) {
     title: `${topic.charAt(0).toUpperCase() + topic.slice(1)} Guide`,
     content: `<h1>${topic.charAt(0).toUpperCase() + topic.slice(1)} Guide</h1><p>This is a comprehensive guide about ${topic}. More content will be available soon.</p>`,
     excerpt: `A comprehensive guide about ${topic}.`,
+    primaryKeywords: [topic],
+    secondaryKeywords: [],
+    suggestedBacklinks: [],
+    suggestedUrl: null
   };
 }
 
@@ -124,6 +128,11 @@ function extractBlogDataFromText(text, topic) {
         title: parsedData.title || `${topic.charAt(0).toUpperCase() + topic.slice(1)} Guide`,
         content: parsedData.content || `<p>${text}</p>`,
         excerpt: parsedData.excerpt || `A guide about ${topic}.`,
+        // Add additional SEO fields if available
+        suggestedUrl: parsedData.suggestedUrl || null,
+        primaryKeywords: parsedData.primaryKeywords || [topic],
+        secondaryKeywords: parsedData.secondaryKeywords || [],
+        suggestedBacklinks: parsedData.suggestedBacklinks || []
       };
     } catch (error) {
       console.log("Direct JSON parsing failed, trying with cleaned JSON");
@@ -142,6 +151,11 @@ function extractBlogDataFromText(text, topic) {
           title: parsedData.title || `${topic.charAt(0).toUpperCase() + topic.slice(1)} Guide`,
           content: parsedData.content || `<p>${text}</p>`,
           excerpt: parsedData.excerpt || `A guide about ${topic}.`,
+          // Add additional SEO fields if available
+          suggestedUrl: parsedData.suggestedUrl || null,
+          primaryKeywords: parsedData.primaryKeywords || [topic],
+          secondaryKeywords: parsedData.secondaryKeywords || [],
+          suggestedBacklinks: parsedData.suggestedBacklinks || []
         };
       } catch (finalError) {
         return extractBlogDataManually(text, topic);
@@ -186,7 +200,15 @@ function extractBlogDataManually(text, topic) {
     excerpt = rawExcerpt.length > 150 ? rawExcerpt.substring(0, 147) + '...' : rawExcerpt;
   }
   
-  return { title, content, excerpt };
+  return { 
+    title, 
+    content, 
+    excerpt,
+    primaryKeywords: [topic],
+    secondaryKeywords: [],
+    suggestedBacklinks: [],
+    suggestedUrl: null
+  };
 }
 
 /**
@@ -340,33 +362,52 @@ async function generateBlogContent(topic) {
     Search the internet for the most current and latest news about "${topic}".
     Write a comprehensive and engaging blog post based on the latest news, trends, and developments about "${topic}".
     
-    IMPORTANT SEO GUIDELINES:
-    1. Create a catchy, SEO-optimized title (60-70 characters) that includes the main keyword "${topic}"
-    2. Structure content with proper heading hierarchy (H1, H2, H3) for better SEO
-    3. Include at least 5 relevant LSI (Latent Semantic Indexing) keywords related to "${topic}"
-    4. Create a meta description (150-160 characters) as the excerpt
-    5. Add proper HTML semantic markup including article, section tags where appropriate
-    6. Include FAQ section with 3-5 common questions about "${topic}" with answers
-    7. Add schema markup for Article and FAQ where appropriate
-    8. Ensure content length is 1000+ words for better SEO performance
-    9. Use bullet points and numbered lists where appropriate for better readability
-    10. Include relevant statistics and cite sources with proper links
+    COMPREHENSIVE SEO OPTIMIZATION GUIDELINES:
+    1. Create a compelling, keyword-rich title (60-65 characters) that includes the primary keyword "${topic}" near the beginning
+    2. Create a strong meta description (150-155 characters) as the excerpt that includes primary and secondary keywords and a clear call-to-action
+    3. Structure content with proper heading hierarchy (H1 for title, H2 for main sections, H3 for subsections)
+    4. Include semantic HTML5 markup with article, section, nav, aside, and header tags where appropriate
+    5. Ensure keyword density of 1-2% for primary keywords (natural usage, not forced)
+    6. Add long-tail variations of the main keyword throughout (e.g., "how to...", "best ways to...", "top tools for...")
+    7. Include at least 8-10 related LSI keywords (Latent Semantic Indexing) for deeper topical coverage
+    8. Create an FAQ section with 5-7 common questions about "${topic}" with detailed answers using schema.org/FAQPage markup
+    9. Add schema.org/Article markup with datePublished, dateModified, author, publisher details
+    10. Include a featured snippet opportunity (definition, steps, list, or table) optimized for position zero
+    11. Ensure content length is 1500-2000+ words for comprehensive coverage
+    12. Add internal linking opportunities to 3-5 related topics with descriptive anchor text
+    13. Include outbound links to 2-3 authoritative sources with relevant statistics
+    14. Optimize image suggestions with descriptive filenames, alt text, and captions
+    15. Create content that satisfies search intent (informational, navigational, transactional, or commercial)
+    16. Use short paragraphs (3-4 sentences), bullet points, and numbered lists for better readability and featured snippet opportunities
+    17. Include target keywords in the first 100 words and last 100 words of the content
+    18. Add TL;DR summary at the beginning for featured snippet optimization
+    19. Include a table of contents with anchor links to improve navigation and SEO
+    20. Implement proper keyword-focused URL structure suggestion
+
+    Content Structure Requirements:
+    - Compelling introduction with a hook and clear value proposition
+    - A brief "TL;DR" summary that targets featured snippets
+    - Table of contents with anchor links
+    - Well-structured body with keyword-optimized H2 and H3 headings
+    - Practical examples, case studies, or data points
+    - Visual content suggestions (infographics, charts, images) with optimization notes
+    - FAQ section with schema markup
+    - Conclusion with key takeaways and next steps
+    - Call-to-action that encourages engagement
     
-    The blog post should have:
-    - A compelling introduction with a hook
-    - Well-structured body with subheadings (H2, H3)
-    - A clear conclusion with a call-to-action
-    - Internal linking opportunities (mention related topics)
-    - Short paragraphs and sentences for readability
-    
-    Format the content in HTML with proper semantic tags.
+    Format the content in HTML with proper semantic tags, emphasizing structured data markup.
+    Include both visible and structured data (schema.org) markup.
     Mention in the content when this was written to emphasize the recency of the information.
     
     Return the response in the following JSON format:
     {
-      "title": "The blog post title",
-      "content": "The HTML content of the blog post with proper semantic markup",
-      "excerpt": "A brief, SEO-optimized meta description (150-160 characters) that summarizes the blog post"
+      "title": "SEO-optimized article title including primary keyword",
+      "content": "The complete HTML content with proper semantic markup and structured data",
+      "excerpt": "SEO-optimized meta description with primary keyword and call-to-action",
+      "suggestedUrl": "keyword-rich-url-structure-for-the-post",
+      "primaryKeywords": ["list", "of", "primary", "keywords"],
+      "secondaryKeywords": ["list", "of", "secondary", "keywords"],
+      "suggestedBacklinks": ["list", "of", "suggested", "outreach", "targets"]
     }
   `;
 
@@ -567,7 +608,15 @@ async function createAutoBlogPost() {
     console.log(`Creating new blog post on topic: ${topic}`);
     
     // 3. Generate blog content using Gemini
-    const { title, content, excerpt } = await generateBlogContent(topic);
+    const { 
+      title, 
+      content, 
+      excerpt, 
+      suggestedUrl, 
+      primaryKeywords, 
+      secondaryKeywords,
+      suggestedBacklinks 
+    } = await generateBlogContent(topic);
     
     // 4. Get related image from Unsplash - wrapped in try/catch to continue even if it fails
     let coverImage;
@@ -581,7 +630,7 @@ async function createAutoBlogPost() {
     // 5. Get relevant tags for the topic
     const tags = await getRelevantTags(topic);
     
-    // 6. Create the blog post data
+    // 6. Create the blog post data with enhanced SEO fields
     const blogData = {
       title,
       content,
@@ -590,12 +639,23 @@ async function createAutoBlogPost() {
       authorName: "AI Blog Assistant",
       authorImage: "https://source.unsplash.com/random/?robot",
       tags,
-      slug: title.toLowerCase()
+      // Use the suggested URL slug if available, otherwise generate from title
+      slug: suggestedUrl || title.toLowerCase()
         .replace(/[^\w\s-]/g, '')
         .replace(/\s+/g, '-'),
       createdAt: admin.firestore.Timestamp.now(),
       updatedAt: admin.firestore.Timestamp.now(),
       publishedAt: admin.firestore.Timestamp.now(),
+      // Add additional SEO fields
+      seoData: {
+        primaryKeywords: primaryKeywords || [topic],
+        secondaryKeywords: secondaryKeywords || [],
+        suggestedBacklinks: suggestedBacklinks || [],
+        focusKeyword: primaryKeywords && primaryKeywords.length > 0 ? primaryKeywords[0] : topic,
+        readabilityScore: 'A', // Placeholder, could be calculated
+        wordCount: content.split(/\s+/).length,
+        lastUpdated: new Date().toISOString()
+      }
     };
 
     console.log(`Blog data prepared, saving to Firestore...`);
@@ -603,6 +663,7 @@ async function createAutoBlogPost() {
     console.log(`Excerpt: ${excerpt.substring(0, 100)}...`);
     console.log(`Cover image: ${coverImage.substring(0, 50)}...`);
     console.log(`Tags: ${tags.join(', ')}`);
+    console.log(`Primary keywords: ${blogData.seoData.primaryKeywords.join(', ')}`);
 
     // 7. Save to Firestore
     const blogsRef = db.collection("blogs");
