@@ -66,6 +66,7 @@ const UNSPLASH_API_URL = 'https://api.unsplash.com/photos/random';
 const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY;
 const API_SECRET = process.env.API_SECRET;
 const WEBSITE_URL = process.env.WEBSITE_URL || 'http://localhost:3000';
+const IMGBB_API_KEY = process.env.IMGBB_API_KEY || ''; // Add ImgBB API key
 
 // Initialize Express
 const app = express();
@@ -338,20 +339,34 @@ async function generateBlogContent(topic) {
   const prompt = `
     Search the internet for the most current and latest news about "${topic}".
     Write a comprehensive and engaging blog post based on the latest news, trends, and developments about "${topic}".
-    Make sure to include recent events, announcements, or breakthroughs that happened within the last day if possible.
     
-    The blog post should be well-structured with clear headings, paragraphs, and lists where appropriate.
-    Include relevant technical details, practical examples, current statistics, and recent developments.
-    Format the content in HTML.
+    IMPORTANT SEO GUIDELINES:
+    1. Create a catchy, SEO-optimized title (60-70 characters) that includes the main keyword "${topic}"
+    2. Structure content with proper heading hierarchy (H1, H2, H3) for better SEO
+    3. Include at least 5 relevant LSI (Latent Semantic Indexing) keywords related to "${topic}"
+    4. Create a meta description (150-160 characters) as the excerpt
+    5. Add proper HTML semantic markup including article, section tags where appropriate
+    6. Include FAQ section with 3-5 common questions about "${topic}" with answers
+    7. Add schema markup for Article and FAQ where appropriate
+    8. Ensure content length is 1000+ words for better SEO performance
+    9. Use bullet points and numbered lists where appropriate for better readability
+    10. Include relevant statistics and cite sources with proper links
     
-    Also generate a catchy title for the blog post and a brief excerpt (2-3 sentences) that summarizes the article.
+    The blog post should have:
+    - A compelling introduction with a hook
+    - Well-structured body with subheadings (H2, H3)
+    - A clear conclusion with a call-to-action
+    - Internal linking opportunities (mention related topics)
+    - Short paragraphs and sentences for readability
+    
+    Format the content in HTML with proper semantic tags.
     Mention in the content when this was written to emphasize the recency of the information.
     
     Return the response in the following JSON format:
     {
       "title": "The blog post title",
-      "content": "The HTML content of the blog post",
-      "excerpt": "A brief excerpt summarizing the blog post"
+      "content": "The HTML content of the blog post with proper semantic markup",
+      "excerpt": "A brief, SEO-optimized meta description (150-160 characters) that summarizes the blog post"
     }
   `;
 
@@ -409,27 +424,134 @@ async function generateBlogContent(topic) {
 }
 
 /**
+ * Upload an image to ImgBB from a URL
+ */
+async function uploadToImgBB(imageUrl, topic) {
+  try {
+    console.log(`Uploading image to ImgBB for topic: ${topic}`);
+    
+    if (!IMGBB_API_KEY) {
+      console.warn('ImgBB API key not set, skipping upload');
+      return imageUrl; // Return original URL if no API key
+    }
+    
+    // Get the image data from the URL
+    console.log(`Fetching image data from: ${imageUrl.substring(0, 50)}...`);
+    const imageResponse = await fetch(imageUrl);
+    
+    if (!imageResponse.ok) {
+      console.error(`Failed to fetch image data: ${imageResponse.status} ${imageResponse.statusText}`);
+      return imageUrl; // Return original URL if fetch fails
+    }
+    
+    // Convert to blob
+    const imageBlob = await imageResponse.blob();
+    
+    // Create form data
+    const formData = new FormData();
+    formData.append('image', imageBlob);
+    formData.append('key', IMGBB_API_KEY);
+    formData.append('name', `auto_blog_${topic.replace(/\s+/g, '_')}_${Date.now()}`);
+    
+    // Upload to ImgBB
+    console.log('Uploading to ImgBB...');
+    const uploadResponse = await fetch('https://api.imgbb.com/1/upload', {
+      method: 'POST',
+      body: formData
+    });
+    
+    if (!uploadResponse.ok) {
+      console.error(`ImgBB upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
+      return imageUrl; // Return original URL if upload fails
+    }
+    
+    const uploadData = await uploadResponse.json();
+    
+    if (uploadData.success) {
+      console.log(`ImgBB upload successful, URL: ${uploadData.data.url.substring(0, 50)}...`);
+      return uploadData.data.url; // Return the ImgBB URL
+    } else {
+      console.error('ImgBB upload failed:', uploadData.error);
+      return imageUrl; // Return original URL if API response indicates failure
+    }
+  } catch (error) {
+    console.error('Error uploading to ImgBB:', error);
+    return imageUrl; // Return original URL if anything goes wrong
+  }
+}
+
+/**
  * Get a random image from Unsplash related to a topic
  */
 async function getUnsplashImage(topic) {
   try {
-    const response = await fetch(
-      `${UNSPLASH_API_URL}?query=${encodeURIComponent(topic)}&client_id=${UNSPLASH_ACCESS_KEY}`
-    );
+    console.log(`Fetching image from Unsplash for topic: ${topic}`);
+    console.log(`Using Unsplash API key: ${UNSPLASH_ACCESS_KEY ? UNSPLASH_ACCESS_KEY.substring(0, 5) + '...' : 'not set'}`);
+    
+    const url = `${UNSPLASH_API_URL}?query=${encodeURIComponent(topic)}&client_id=${UNSPLASH_ACCESS_KEY}`;
+    console.log(`Unsplash API URL: ${url.replace(UNSPLASH_ACCESS_KEY, '***')}`);
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      console.error(`Unsplash API returned status ${response.status}: ${response.statusText}`);
+      return getFallbackImage(topic);
+    }
+    
     const data = await response.json();
+    console.log(`Unsplash response status: ${response.status}, has urls: ${data && data.urls ? 'yes' : 'no'}`);
     
     // Check if data and data.urls exist before accessing data.urls.regular
     if (data && data.urls && data.urls.regular) {
-      return data.urls.regular;
+      console.log(`Found image URL: ${data.urls.regular.substring(0, 50)}...`);
+      
+      // Upload to ImgBB for more reliable storage
+      const imgbbUrl = await uploadToImgBB(data.urls.regular, topic);
+      return imgbbUrl;
     } else {
-      console.error("Unsplash API response is missing expected properties:", data);
-      return `https://source.unsplash.com/random/?${encodeURIComponent(topic)}`;
+      console.error("Unsplash API response is missing expected properties:", JSON.stringify(data).substring(0, 200));
+      return getFallbackImage(topic);
     }
   } catch (error) {
     console.error("Error fetching image from Unsplash:", error);
-    // Return a default image if Unsplash fails
-    return `https://source.unsplash.com/random/?${encodeURIComponent(topic)}`;
+    return getFallbackImage(topic);
   }
+}
+
+/**
+ * Get fallback image when Unsplash fails
+ */
+function getFallbackImage(topic) {
+  // Try different options for fallback images
+  const options = [
+    // Option 1: Use the Unsplash source API (doesn't require API key)
+    `https://source.unsplash.com/random/?${encodeURIComponent(topic)}`,
+    
+    // Option 2: Use Pexels placeholder (doesn't require API key)
+    `https://images.pexels.com/photos/546819/pexels-photo-546819.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1`,
+    
+    // Option 3: Use Picsum placeholder
+    `https://picsum.photos/800/600`,
+    
+    // Option 4: Last resort - static placeholder
+    `https://via.placeholder.com/800x600.png?text=${encodeURIComponent(topic)}`
+  ];
+  
+  // Select the first option as default
+  const fallbackUrl = options[0];
+  console.log(`Using fallback image URL: ${fallbackUrl}`);
+  
+  // Try to upload the fallback image to ImgBB as well
+  // This is wrapped in a try/catch just to be safe
+  try {
+    if (IMGBB_API_KEY) {
+      return uploadToImgBB(fallbackUrl, topic);
+    }
+  } catch (error) {
+    console.error("Error uploading fallback image to ImgBB:", error);
+  }
+  
+  return fallbackUrl;
 }
 
 /**
@@ -442,12 +564,19 @@ async function createAutoBlogPost() {
     
     // 2. Pick a random trending topic
     const topic = getRandomItem(trendingTopics);
+    console.log(`Creating new blog post on topic: ${topic}`);
     
     // 3. Generate blog content using Gemini
     const { title, content, excerpt } = await generateBlogContent(topic);
     
-    // 4. Get related image from Unsplash
-    const coverImage = await getUnsplashImage(topic);
+    // 4. Get related image from Unsplash - wrapped in try/catch to continue even if it fails
+    let coverImage;
+    try {
+      coverImage = await getUnsplashImage(topic);
+    } catch (imageError) {
+      console.error("Failed to get image, using fallback:", imageError);
+      coverImage = getFallbackImage(topic);
+    }
     
     // 5. Get relevant tags for the topic
     const tags = await getRelevantTags(topic);
@@ -468,6 +597,12 @@ async function createAutoBlogPost() {
       updatedAt: admin.firestore.Timestamp.now(),
       publishedAt: admin.firestore.Timestamp.now(),
     };
+
+    console.log(`Blog data prepared, saving to Firestore...`);
+    console.log(`Title: ${title}`);
+    console.log(`Excerpt: ${excerpt.substring(0, 100)}...`);
+    console.log(`Cover image: ${coverImage.substring(0, 50)}...`);
+    console.log(`Tags: ${tags.join(', ')}`);
 
     // 7. Save to Firestore
     const blogsRef = db.collection("blogs");
